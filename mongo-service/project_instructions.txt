@@ -1,0 +1,345 @@
+# Model Context Protocol (MCP) Implementation Guide
+
+## Core Implementation Patterns
+
+### 1. Server Implementation
+```python
+from mcp.server import Server
+from mcp.types import TextContent
+from typing import Dict, Any, List, Optional
+
+# Basic server setup
+server = Server(name="your-server")
+
+# Resource pattern
+@server.list_resources()
+async def list_resources():
+    return [
+        Resource(
+            name="resource_name",
+            uri="resource://uri",
+            display_name="Display Name",
+            description="Description"
+        )
+    ]
+
+# Tool pattern
+@server.call_tool()
+async def call_tool(name: str, arguments: Optional[Dict[str, Any]]) -> List[TextContent]:
+    return [TextContent(text="result")]
+```
+
+### 2. Resource Implementation Pattern
+```python
+@server.list_resources()
+async def list_resources():
+    # 1. Define resource metadata
+    resources = [
+        Resource(
+            name="collection_name",
+            uri=f"protocol://{collection_name}",
+            display_name="Human readable name",
+            description="Clear description"
+        )
+    ]
+    return resources
+
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    try:
+        # 1. Parse URI
+        resource_name = uri.split("://")[-1]
+        
+        # 2. Access data source
+        data = await get_data(resource_name)
+        
+        # 3. Format response
+        return format_data(data)
+        
+    except Exception as e:
+        # 4. Handle errors appropriately
+        logger.error(f"Resource error: {e}")
+        return f"Error accessing resource: {str(e)}"
+```
+
+### 3. Tool Implementation Pattern
+```python
+@server.list_tools()
+async def list_tools():
+    return [
+        Tool(
+            name="tool_name",
+            display_name="Tool Display Name",
+            description="Tool Description",
+            parameters={
+                "param1": {
+                    "type": "string",
+                    "description": "Parameter description",
+                    "required": True
+                }
+            }
+        )
+    ]
+
+@server.call_tool()
+async def call_tool(name: str, arguments: Optional[Dict[str, Any]]) -> List[TextContent]:
+    try:
+        # 1. Validate arguments
+        if not arguments:
+            return [TextContent(text="Missing required arguments")]
+
+        # 2. Process request
+        result = await process_tool_request(name, arguments)
+        
+        # 3. Format response
+        return [TextContent(text=str(result))]
+        
+    except Exception as e:
+        # 4. Handle errors
+        logger.error(f"Tool error: {e}")
+        return [TextContent(text=f"Tool execution error: {str(e)}")]
+```
+
+## Error Handling Patterns
+
+### 1. Database Errors
+```python
+try:
+    # Database operation
+    result = await db.collection.find()
+except ConnectionError as e:
+    logger.error(f"Database connection error: {e}")
+    return [TextContent(text="Database unavailable")]
+except OperationError as e:
+    logger.error(f"Database operation error: {e}")
+    return [TextContent(text="Operation failed")]
+except Exception as e:
+    logger.error(f"Unexpected error: {e}")
+    return [TextContent(text="Internal error")]
+```
+
+### 2. Resource Errors
+```python
+async def handle_resource_error(e: Exception) -> TextContent:
+    error_map = {
+        ConnectionError: "Resource connection failed",
+        ValueError: "Invalid resource parameters",
+        NotFoundError: "Resource not found",
+        Exception: "Internal resource error"
+    }
+    
+    error_type = type(e)
+    message = error_map.get(error_type, str(e))
+    logger.error(f"{error_type.__name__}: {message}")
+    return TextContent(text=message)
+```
+
+### 3. Tool Errors
+```python
+async def handle_tool_error(e: Exception) -> TextContent:
+    if isinstance(e, ValidationError):
+        return TextContent(text=f"Invalid parameters: {str(e)}")
+    elif isinstance(e, ExecutionError):
+        return TextContent(text=f"Execution failed: {str(e)}")
+    else:
+        logger.error(f"Unexpected tool error: {e}")
+        return TextContent(text="Internal tool error")
+```
+
+## Response Formatting Patterns
+
+### 1. Data Responses
+```python
+def format_document_response(doc: Dict) -> str:
+    # 1. Handle special types (e.g., ObjectId)
+    doc_copy = doc.copy()
+    if '_id' in doc_copy:
+        doc_copy['_id'] = str(doc_copy['_id'])
+    
+    # 2. Format as JSON
+    return json.dumps(doc_copy, indent=2)
+
+def format_list_response(items: List[Dict]) -> str:
+    # 1. Format multiple items
+    formatted = [format_document_response(item) for item in items]
+    return "\n".join(formatted)
+```
+
+### 2. Error Responses
+```python
+def format_error_response(error: Exception) -> str:
+    # 1. Create error context
+    context = {
+        "error_type": error.__class__.__name__,
+        "message": str(error),
+        "timestamp": datetime.utcnow().isoformat()
+    }
+    
+    # 2. Format as JSON
+    return json.dumps(context, indent=2)
+```
+
+## Data Source Integration Patterns
+
+### 1. Connection Management
+```python
+async def setup_connection(uri: str):
+    # 1. Initialize connection with timeout
+    client = Client(uri, serverSelectionTimeoutMS=5000)
+    
+    # 2. Test connection
+    await client.server_info()
+    
+    # 3. Setup error handlers
+    client.on_error = handle_connection_error
+    
+    return client
+
+async def cleanup_connection(client):
+    # 1. Graceful shutdown
+    try:
+        await client.close()
+    except Exception as e:
+        logger.error(f"Cleanup error: {e}")
+```
+
+### 2. Query Execution
+```python
+async def execute_query(query: Dict, options: Dict):
+    try:
+        # 1. Validate query
+        validate_query(query)
+        
+        # 2. Apply query options
+        cursor = collection.find(query)
+        if options.get('limit'):
+            cursor = cursor.limit(options['limit'])
+            
+        # 3. Execute and format results
+        results = await cursor.to_list(length=None)
+        return format_list_response(results)
+        
+    except Exception as e:
+        return format_error_response(e)
+```
+
+## Health Check Pattern
+```python
+async def health_check():
+    try:
+        # 1. Check data source
+        await client.server_info()
+        doc_count = await collection.count_documents({})
+        
+        # 2. Format response
+        return {
+            "status": "healthy",
+            "connection": "active",
+            "document_count": doc_count,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+```
+
+## Validation Patterns
+
+### 1. Query Validation
+```python
+def validate_query(query: Dict):
+    # 1. Check query structure
+    if not isinstance(query, dict):
+        raise ValueError("Query must be a dictionary")
+        
+    # 2. Validate operators
+    for key, value in query.items():
+        if key.startswith('$'):
+            validate_operator(key, value)
+            
+    # 3. Check query size
+    query_size = len(json.dumps(query))
+    if query_size > MAX_QUERY_SIZE:
+        raise ValueError(f"Query size exceeds limit")
+```
+
+### 2. Parameter Validation
+```python
+def validate_tool_parameters(params: Dict):
+    # 1. Check required parameters
+    required = {'query', 'limit'}
+    missing = required - set(params.keys())
+    if missing:
+        raise ValueError(f"Missing required parameters: {missing}")
+        
+    # 2. Validate parameter types
+    if not isinstance(params['query'], dict):
+        raise ValueError("Query must be a dictionary")
+        
+    # 3. Validate limits
+    if params.get('limit', 0) > MAX_LIMIT:
+        raise ValueError(f"Limit exceeds maximum allowed value")
+```
+
+## Security Patterns
+
+### 1. Input Sanitization
+```python
+def sanitize_query(query: Dict) -> Dict:
+    # 1. Remove unsafe operators
+    unsafe_operators = {'$where', '$expr'}
+    for key in list(query.keys()):
+        if key in unsafe_operators:
+            del query[key]
+            
+    # 2. Limit query depth
+    if query_depth(query) > MAX_DEPTH:
+        raise ValueError("Query too complex")
+        
+    return query
+```
+
+### 2. Resource Protection
+```python
+def protect_resource_access(uri: str):
+    # 1. Validate URI format
+    if not uri.startswith('protocol://'):
+        raise ValueError("Invalid URI format")
+        
+    # 2. Check resource permissions
+    resource_name = uri.split('://')[-1]
+    if not has_access(resource_name):
+        raise PermissionError("Access denied")
+        
+    # 3. Rate limiting
+    if exceeds_rate_limit():
+        raise RateLimitError("Too many requests")
+```
+
+## Logging Pattern
+```python
+def setup_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler('mcp_server.log')
+        ]
+    )
+
+def log_operation(operation: str, details: Dict):
+    logger.info(
+        f"Operation: {operation}",
+        extra={
+            "details": details,
+            "timestamp": datetime.utcnow().isoformat(),
+            "process_id": os.getpid()
+        }
+    )
+```
+
+These patterns provide a foundation for implementing MCP servers with proper error handling, security, and maintainability. Adjust and extend them based on your specific requirements.

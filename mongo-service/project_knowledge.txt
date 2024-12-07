@@ -1,0 +1,276 @@
+# Model Context Protocol (MCP) Knowledge Base
+
+## Core Documentation Resources
+
+### 1. Primary MCP Resources
+- Introduction: https://modelcontextprotocol.io/introduction
+- Specification: https://spec.modelcontextprotocol.io/
+- Python SDK: https://github.com/modelcontextprotocol/python-sdk
+- Reference Implementations: https://github.com/modelcontextprotocol/servers
+
+### 2. In-Depth Documentation
+- Server Development: https://modelcontextprotocol.io/docs/server-guide
+- Best Practices: https://modelcontextprotocol.io/docs/best-practices
+- Error Handling: https://modelcontextprotocol.io/docs/error-handling
+- Security Guide: https://modelcontextprotocol.io/docs/security
+
+### 3. Integration Guides
+- Claude Desktop: https://modelcontextprotocol.io/docs/claude-desktop
+- Python First Server: https://modelcontextprotocol.io/docs/first-server/python
+- FastAPI Integration: https://modelcontextprotocol.io/docs/fastapi
+
+## MCP Components Overview
+
+### 1. Core Concepts
+```python
+from mcp.server import Server
+from mcp.types import Resource, Tool, TextContent
+
+# Server - Main MCP protocol handler
+server = Server(name="your-server")
+
+# Resources - Data providers
+@server.list_resources()
+async def list_resources() -> List[Resource]: ...
+
+# Tools - Action executors
+@server.call_tool()
+async def call_tool(name: str, arguments: Dict) -> List[TextContent]: ...
+```
+
+### 2. Protocol Features
+- Resources: Provide data access
+- Tools: Execute operations
+- Prompts: Guide interactions
+- TextContent: Standard response format
+- Error Handling: Standardized error responses
+
+### 3. Transport Mechanisms
+- stdio: Standard protocol transport
+- HTTP: Optional for health checks
+- WebSocket: For real-time features
+- Custom: Extensible transport layer
+
+## MCP Protocol Specifications
+
+### 1. Message Format
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "string",
+    "params": {},
+    "id": "string"
+}
+```
+
+### 2. Standard Methods
+- list_resources: Get available resources
+- read_resource: Access resource data
+- list_tools: Get available tools
+- call_tool: Execute tool operation
+
+### 3. Response Format
+```json
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "type": "text",
+        "text": "string"
+    },
+    "id": "string"
+}
+```
+
+## MCP Server Development
+
+### 1. Core Components
+```python
+# Resource Implementation
+@server.list_resources()
+async def list_resources() -> List[Resource]:
+    return [
+        Resource(
+            name="resource_name",
+            uri="resource_uri",
+            display_name="Display Name",
+            description="Description"
+        )
+    ]
+
+# Tool Implementation
+@server.call_tool()
+async def call_tool(name: str, arguments: Dict) -> List[TextContent]:
+    return [TextContent(text="result")]
+```
+
+### 2. Error Handling Patterns
+```python
+# Protocol Error
+def handle_error() -> List[TextContent]:
+    return [TextContent(text="Error message")]
+
+# Server Error
+async def handle_server_error():
+    raise Exception("Server error")
+
+# Resource Error
+async def handle_resource_error():
+    return [TextContent(text="Resource error")]
+```
+
+### 3. Response Formatting
+```python
+# Text Response
+TextContent(text="Plain text response")
+
+# Structured Response
+TextContent(text=json.dumps(data, indent=2))
+
+# Error Response
+TextContent(text=f"Error: {str(error)}")
+```
+
+## Protocol Integration Patterns
+
+### 1. Resource Integration
+```python
+# Direct Data Access
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    return "data"
+
+# Streaming Data
+@server.read_resource()
+async def stream_resource(uri: str) -> AsyncIterator[str]:
+    yield "data"
+```
+
+### 2. Tool Integration
+```python
+# Simple Tool
+@server.call_tool()
+async def simple_tool(name: str, args: Dict) -> List[TextContent]:
+    return [TextContent(text="result")]
+
+# Complex Tool
+@server.call_tool()
+async def complex_tool(name: str, args: Dict) -> List[TextContent]:
+    result = await process_data(args)
+    return [TextContent(text=str(result))]
+```
+
+## Best Practices
+
+### 1. Resource Design
+- Unique resource names
+- Clear URI structure
+- Proper error handling
+- Efficient data retrieval
+- Clear documentation
+
+### 2. Tool Design
+- Descriptive names
+- Clear parameter schemas
+- Comprehensive validation
+- Proper error handling
+- Performance optimization
+
+### 3. Server Design
+- Clean initialization
+- Proper shutdown
+- Resource cleanup
+- Error logging
+- Health monitoring
+
+## Security Guidelines
+
+### 1. Input Validation
+- Parameter validation
+- URI validation
+- Query validation
+- Resource access control
+- Error message sanitization
+
+### 2. Error Handling
+- Safe error messages
+- Proper logging
+- Rate limiting
+- Resource limits
+- Access control
+
+### 3. Resource Protection
+- Access validation
+- Data sanitization
+- Rate limiting
+- Usage monitoring
+- Error tracking
+
+## Implementation Guides
+
+### 1. Basic Server
+```python
+# Server setup
+server = Server(name="your-server")
+
+# Resource registration
+@server.list_resources()
+async def resources(): ...
+
+# Tool registration
+@server.call_tool()
+async def tools(): ...
+```
+
+### 2. Advanced Features
+```python
+# Streaming support
+async def stream_data(): ...
+
+# Complex tools
+async def process_data(): ...
+
+# Error handling
+async def handle_errors(): ...
+```
+
+## Testing Patterns
+
+### 1. Resource Testing
+```python
+# Test resource listing
+async def test_list_resources(): ...
+
+# Test resource reading
+async def test_read_resource(): ...
+```
+
+### 2. Tool Testing
+```python
+# Test tool listing
+async def test_list_tools(): ...
+
+# Test tool execution
+async def test_call_tool(): ...
+```
+
+## Performance Optimization
+
+### 1. Resource Optimization
+- Efficient data retrieval
+- Result caching
+- Connection pooling
+- Resource limits
+- Error caching
+
+### 2. Tool Optimization
+- Query optimization
+- Result caching
+- Connection management
+- Resource cleanup
+- Error handling
+
+## Further Reading
+1. MCP Protocol Specification: https://spec.modelcontextprotocol.io/
+2. Python SDK Documentation: https://modelcontextprotocol.io/python-sdk
+3. Implementation Examples: https://github.com/modelcontextprotocol/servers
+4. Best Practices Guide: https://modelcontextprotocol.io/docs/best-practices
