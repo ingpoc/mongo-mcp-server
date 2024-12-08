@@ -26,38 +26,41 @@ class MongoQueryTool(Tool):
             name=f"query_{collection_name}",  # Required: Unique name for the tool
             display_name=f"Query {collection_name}",  # Optional: Human-readable name
             description=f"Query the {collection_name} collection in MongoDB",  # Optional: Description
-            parameters={  # Required: Define the parameters this tool accepts
-                "query": {
-                    "type": "object",
-                    "description": "MongoDB query filter",
-                    "required": True
-                },
-                "options": {
-                    "type": "object",
-                    "description": "MongoDB query options (projection, sort, limit, skip)",
-                    "required": False,
-                    "properties": {
-                        "projection": {
-                            "type": "object",
-                            "description": "Fields to include/exclude"
-                        },
-                        "sort": {
-                            "type": "object",
-                            "description": "Sort criteria"
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "description": "Maximum number of documents to return",
-                            "minimum": 1,
-                            "maximum": 100
-                        },
-                        "skip": {
-                            "type": "integer",
-                            "description": "Number of documents to skip",
-                            "minimum": 0
+            inputSchema={  # Required: Define the parameters this tool accepts
+                "type": "object",
+                "title": "QueryParameters",
+                "properties": {
+                    "query": {
+                        "type": "object",
+                        "description": "MongoDB query filter"
+                    },
+                    "options": {
+                        "type": "object",
+                        "description": "MongoDB query options (projection, sort, limit, skip)",
+                        "properties": {
+                            "projection": {
+                                "type": "object",
+                                "description": "Fields to include/exclude"
+                            },
+                            "sort": {
+                                "type": "object",
+                                "description": "Sort criteria"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of documents to return",
+                                "minimum": 1,
+                                "maximum": 100
+                            },
+                            "skip": {
+                                "type": "integer",
+                                "description": "Number of documents to skip",
+                                "minimum": 0
+                            }
                         }
                     }
-                }
+                },
+                "required": ["query"]
             }
         )
         self.collection = db[collection_name]

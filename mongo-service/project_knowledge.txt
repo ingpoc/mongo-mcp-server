@@ -1,276 +1,262 @@
 # Model Context Protocol (MCP) Knowledge Base
 
-## Core Documentation Resources
+## MCP Core Concepts
 
-### 1. Primary MCP Resources
-- Introduction: https://modelcontextprotocol.io/introduction
-- Specification: https://spec.modelcontextprotocol.io/
-- Python SDK: https://github.com/modelcontextprotocol/python-sdk
-- Reference Implementations: https://github.com/modelcontextprotocol/servers
+### 1. Overview
+- MCP is a protocol for connecting AI models with data sources and tools
+- Uses stdio as primary transport mechanism
+- Supports both synchronous and asynchronous operations
+- Resource and Tool based architecture
 
-### 2. In-Depth Documentation
-- Server Development: https://modelcontextprotocol.io/docs/server-guide
-- Best Practices: https://modelcontextprotocol.io/docs/best-practices
-- Error Handling: https://modelcontextprotocol.io/docs/error-handling
-- Security Guide: https://modelcontextprotocol.io/docs/security
-
-### 3. Integration Guides
-- Claude Desktop: https://modelcontextprotocol.io/docs/claude-desktop
-- Python First Server: https://modelcontextprotocol.io/docs/first-server/python
-- FastAPI Integration: https://modelcontextprotocol.io/docs/fastapi
-
-## MCP Components Overview
-
-### 1. Core Concepts
+### 2. Key Components
 ```python
 from mcp.server import Server
-from mcp.types import Resource, Tool, TextContent
+from mcp.types import TextContent, Tool, Resource
+from mcp.server.stdio import stdio_server
+from mcp.server.models import InitializationOptions
 
-# Server - Main MCP protocol handler
+# Core Server
+server = Server(name="your-server-name")
+
+# Resources - Data Access Points
+@server.list_resources()
+async def list_resources() -> List[Resource]
+
+# Tools - Action Executors
+@server.list_tools()
+async def list_tools() -> List[Tool]
+```
+
+### 3. Resource Pattern
+```python
+Resource(
+    name="resource_name",      # Unique identifier
+    uri="protocol://path",     # Resource location
+    display_name="Display",    # Human-readable name
+    description="Details"      # Resource description
+)
+```
+
+### 4. Tool Pattern
+```python
+Tool(
+    name="tool_name",          # Unique identifier
+    display_name="Display",    # Human-readable name
+    description="Details",     # Tool description
+    inputSchema={             # JSON Schema for input
+        "type": "object",
+        "title": "Parameters",
+        "properties": {
+            "param1": {"type": "string"}
+        },
+        "required": ["param1"]
+    }
+)
+```
+
+## Protocol Implementation
+
+### 1. Server Implementation
+```python
+# Initialize server
 server = Server(name="your-server")
 
-# Resources - Data providers
-@server.list_resources()
-async def list_resources() -> List[Resource]: ...
-
-# Tools - Action executors
-@server.call_tool()
-async def call_tool(name: str, arguments: Dict) -> List[TextContent]: ...
+# Setup stdio transport
+async def run_server():
+    async with stdio_server() as (read, write):
+        init_options = InitializationOptions(
+            server_name="your-server",
+            server_version="1.0.0"
+        )
+        await server.run(read, write, init_options)
 ```
 
-### 2. Protocol Features
-- Resources: Provide data access
-- Tools: Execute operations
-- Prompts: Guide interactions
-- TextContent: Standard response format
-- Error Handling: Standardized error responses
-
-### 3. Transport Mechanisms
-- stdio: Standard protocol transport
-- HTTP: Optional for health checks
-- WebSocket: For real-time features
-- Custom: Extensible transport layer
-
-## MCP Protocol Specifications
-
-### 1. Message Format
-```json
-{
-    "jsonrpc": "2.0",
-    "method": "string",
-    "params": {},
-    "id": "string"
-}
-```
-
-### 2. Standard Methods
-- list_resources: Get available resources
-- read_resource: Access resource data
-- list_tools: Get available tools
-- call_tool: Execute tool operation
-
-### 3. Response Format
-```json
-{
-    "jsonrpc": "2.0",
-    "result": {
-        "type": "text",
-        "text": "string"
-    },
-    "id": "string"
-}
-```
-
-## MCP Server Development
-
-### 1. Core Components
+### 2. Resource Implementation
 ```python
-# Resource Implementation
 @server.list_resources()
 async def list_resources() -> List[Resource]:
     return [
         Resource(
-            name="resource_name",
-            uri="resource_uri",
-            display_name="Display Name",
-            description="Description"
+            name="example_resource",
+            uri="protocol://path",
+            display_name="Example",
+            description="Resource description"
         )
     ]
 
-# Tool Implementation
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    # Resource reading logic
+    return "resource content"
+```
+
+### 3. Tool Implementation
+```python
+@server.list_tools()
+async def list_tools() -> List[Tool]:
+    return [
+        Tool(
+            name="example_tool",
+            display_name="Example Tool",
+            description="Tool description",
+            inputSchema={
+                "type": "object",
+                "title": "Parameters",
+                "properties": {}
+            }
+        )
+    ]
+
 @server.call_tool()
 async def call_tool(name: str, arguments: Dict) -> List[TextContent]:
     return [TextContent(text="result")]
 ```
 
-### 2. Error Handling Patterns
-```python
-# Protocol Error
-def handle_error() -> List[TextContent]:
-    return [TextContent(text="Error message")]
+## Claude Desktop Integration
 
-# Server Error
-async def handle_server_error():
-    raise Exception("Server error")
-
-# Resource Error
-async def handle_resource_error():
-    return [TextContent(text="Resource error")]
+### 1. Configuration
+```json
+{
+    "your-service": {
+        "command": "python",
+        "args": [
+            "-m",
+            "your.package.server"
+        ],
+        "env": {
+            "PYTHONPATH": "path/to/your/project"
+        }
+    }
+}
 ```
 
-### 3. Response Formatting
+### 2. Communication Flow
+1. Claude Desktop launches server using config
+2. Server initializes with stdio transport
+3. Resource/Tool discovery happens automatically
+4. Claude can access resources and execute tools
+
+## Error Handling Patterns
+
+### 1. Resource Errors
 ```python
-# Text Response
-TextContent(text="Plain text response")
-
-# Structured Response
-TextContent(text=json.dumps(data, indent=2))
-
-# Error Response
-TextContent(text=f"Error: {str(error)}")
+async def handle_resource_error(e: Exception) -> str:
+    error_msg = f"Resource error: {str(e)}"
+    logger.error(error_msg)
+    return error_msg
 ```
 
-## Protocol Integration Patterns
-
-### 1. Resource Integration
+### 2. Tool Errors
 ```python
-# Direct Data Access
-@server.read_resource()
-async def read_resource(uri: str) -> str:
-    return "data"
-
-# Streaming Data
-@server.read_resource()
-async def stream_resource(uri: str) -> AsyncIterator[str]:
-    yield "data"
-```
-
-### 2. Tool Integration
-```python
-# Simple Tool
-@server.call_tool()
-async def simple_tool(name: str, args: Dict) -> List[TextContent]:
-    return [TextContent(text="result")]
-
-# Complex Tool
-@server.call_tool()
-async def complex_tool(name: str, args: Dict) -> List[TextContent]:
-    result = await process_data(args)
-    return [TextContent(text=str(result))]
-```
-
-## Best Practices
-
-### 1. Resource Design
-- Unique resource names
-- Clear URI structure
-- Proper error handling
-- Efficient data retrieval
-- Clear documentation
-
-### 2. Tool Design
-- Descriptive names
-- Clear parameter schemas
-- Comprehensive validation
-- Proper error handling
-- Performance optimization
-
-### 3. Server Design
-- Clean initialization
-- Proper shutdown
-- Resource cleanup
-- Error logging
-- Health monitoring
-
-## Security Guidelines
-
-### 1. Input Validation
-- Parameter validation
-- URI validation
-- Query validation
-- Resource access control
-- Error message sanitization
-
-### 2. Error Handling
-- Safe error messages
-- Proper logging
-- Rate limiting
-- Resource limits
-- Access control
-
-### 3. Resource Protection
-- Access validation
-- Data sanitization
-- Rate limiting
-- Usage monitoring
-- Error tracking
-
-## Implementation Guides
-
-### 1. Basic Server
-```python
-# Server setup
-server = Server(name="your-server")
-
-# Resource registration
-@server.list_resources()
-async def resources(): ...
-
-# Tool registration
-@server.call_tool()
-async def tools(): ...
-```
-
-### 2. Advanced Features
-```python
-# Streaming support
-async def stream_data(): ...
-
-# Complex tools
-async def process_data(): ...
-
-# Error handling
-async def handle_errors(): ...
+async def handle_tool_error(e: Exception) -> List[TextContent]:
+    error_msg = f"Tool error: {str(e)}"
+    logger.error(error_msg)
+    return [TextContent(text=error_msg)]
 ```
 
 ## Testing Patterns
 
-### 1. Resource Testing
+### 1. Server Testing
 ```python
-# Test resource listing
-async def test_list_resources(): ...
+from mcp import ClientSession
+from mcp.client.stdio import stdio_client
 
-# Test resource reading
-async def test_read_resource(): ...
+async def test_server():
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            resources = await session.list_resources()
+            tools = await session.list_tools()
 ```
 
-### 2. Tool Testing
+### 2. Resource Testing
 ```python
-# Test tool listing
-async def test_list_tools(): ...
-
-# Test tool execution
-async def test_call_tool(): ...
+async def test_resource():
+    resources = await session.list_resources()
+    content = await session.read_resource(resources[0].uri)
 ```
 
-## Performance Optimization
+### 3. Tool Testing
+```python
+async def test_tool():
+    tools = await session.list_tools()
+    result = await session.call_tool(
+        tools[0].name,
+        {"param": "value"}
+    )
+```
 
-### 1. Resource Optimization
-- Efficient data retrieval
-- Result caching
-- Connection pooling
-- Resource limits
-- Error caching
+## Best Practices
 
-### 2. Tool Optimization
-- Query optimization
-- Result caching
-- Connection management
-- Resource cleanup
+### 1. Server Design
+- Use meaningful server names
+- Handle startup/shutdown gracefully
+- Implement proper error handling
+- Use async/await consistently
+- Log important operations
+
+### 2. Resource Design
+- Clear, unique resource names
+- Descriptive URIs
+- Proper error handling
+- Efficient data access
+- Clear documentation
+
+### 3. Tool Design
+- Clear parameter schemas
+- Input validation
+- Proper error handling
+- Clear feedback messages
+- Idempotent operations
+
+### 4. Testing
+- Test stdio communication
+- Verify resource access
+- Validate tool execution
+- Check error handling
+- Test edge cases
+
+## Deployment Guidelines
+
+### 1. Environment Setup
+- Set PYTHONPATH correctly
+- Configure logging
+- Set environment variables
+- Handle dependencies
+
+### 2. Claude Desktop Integration
+- Correct command configuration
+- Proper argument structure
+- Environment variable setup
+- Path configuration
+
+### 3. Monitoring
+- Log important operations
+- Handle errors gracefully
+- Monitor performance
+- Track resource usage
+
+## Security Considerations
+
+### 1. Input Validation
+- Validate all inputs
+- Sanitize data
+- Check permissions
+- Handle errors safely
+
+### 2. Resource Protection
+- Access control
+- Input validation
+- Rate limiting
 - Error handling
 
-## Further Reading
-1. MCP Protocol Specification: https://spec.modelcontextprotocol.io/
-2. Python SDK Documentation: https://modelcontextprotocol.io/python-sdk
-3. Implementation Examples: https://github.com/modelcontextprotocol/servers
-4. Best Practices Guide: https://modelcontextprotocol.io/docs/best-practices
+### 3. Error Messages
+- Don't expose internals
+- Clear user messages
+- Proper logging
+- Secure error handling
+
+## Reference Resources
+1. MCP Documentation: https://modelcontextprotocol.io/
+2. Python SDK Docs: https://github.com/modelcontextprotocol/python-sdk
+3. Best Practices: https://modelcontextprotocol.io/docs/best-practices

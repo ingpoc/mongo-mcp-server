@@ -4,7 +4,8 @@ Main MCP server implementation for MongoDB integration.
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Response, status
-from mcp.server import Server
+from mcp.server import Server, NotificationOptions
+from mcp.server.models import InitializationOptions
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool, Resource
 from pymongo import MongoClient
@@ -17,13 +18,19 @@ import os
 from . import config
 
 # Configure logging
-logging.basicConfig(level=config.LOG_LEVEL)
+logging.basicConfig(
+    level=config.LOG_LEVEL,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # MongoDB connection
 client = None
 db = None
 collection = None
+
+# MCP Server instance
+mcp_server = Server(name="stock-data-mcp-server")
 
 def setup_mongodb():
     """Initialize MongoDB connection."""
@@ -76,9 +83,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Create MCP Server
-mcp_server = Server(name="stock-data-mcp-server")
-
 # Define resources
 @mcp_server.list_resources()
 async def list_resources() -> List[Resource]:
@@ -130,17 +134,36 @@ async def list_tools() -> List[Tool]:
             name=f"query_{config.COLLECTION_NAME}",
             display_name=f"Query {config.COLLECTION_NAME}",
             description=f"Query the {config.COLLECTION_NAME} collection in MongoDB",
-            parameters={
-                "query": {
-                    "type": "object",
-                    "description": "MongoDB query filter",
-                    "required": True
+            inputSchema={
+                "type": "object",
+                "title": "QueryParameters",
+                "properties": {
+                    "query": {
+                        "type": "object",
+                        "description": "MongoDB query filter"
+                    },
+                    "options": {
+                        "type": "object",
+                        "description": "MongoDB query options",
+                        "properties": {
+                            "projection": {
+                                "type": "object",
+                                "description": "Fields to include/exclude"
+                            },
+                            "sort": {
+                                "type": "object",
+                                "description": "Sort criteria"
+                            },
+                            "limit": {
+                                "type": "integer",
+                                "description": "Maximum number of documents",
+                                "minimum": 1,
+                                "maximum": 100
+                            }
+                        }
+                    }
                 },
-                "options": {
-                    "type": "object",
-                    "description": "MongoDB query options (projection, sort, limit)",
-                    "required": False
-                }
+                "required": ["query"]
             }
         )
     ]
@@ -187,95 +210,49 @@ async def call_tool(name: str, arguments: Optional[Dict[str, Any]]) -> List[Text
         logger.error(error_msg)
         return [TextContent(text=error_msg)]
 
-@app.get("/", status_code=status.HTTP_200_OK)
-async def root():
-    """Root endpoint to verify server is running."""
-    try:
-        # Quick connection check
-        if client and client.server_info():
-            return {
-                "message": "Stock Data MCP Server is running",
-                "status": "healthy",
-                "db_connected": True,
-                "database": config.DB_NAME,
-                "collection": config.COLLECTION_NAME,
-                "pid": os.getpid()
-            }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return Response(
-            content=json.dumps({
-                "status": "unhealthy",
-                "error": str(e),
-                "db_connected": False
-            }),
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            media_type="application/json"
-        )
-
-@app.get("/health", status_code=status.HTTP_200_OK)
-async def health_check():
-    """Health check endpoint."""
-    try:
-        # Don't proceed if client is None
-        if not client:
-            raise Exception("MongoDB client not initialized")
-
-        # Test MongoDB connection
-        client.server_info()
-        collection_count = collection.count_documents({})
-        
-        return {
-            "status": "healthy",
-            "db_connected": True,
-            "db_name": config.DB_NAME,
-            "collection": config.COLLECTION_NAME,
-            "document_count": collection_count,
-            "server_version": "0.1.0",
-            "pid": os.getpid()
-        }
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return Response(
-            content=json.dumps({
-                "status": "unhealthy",
-                "db_connected": False,
-                "error": str(e)
-            }),
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            media_type="application/json"
-        )
-
 async def run_mcp_server():
     """Run the MCP server using stdio transport."""
-    async with stdio_server() as (read_stream, write_stream):
-        await mcp_server.run(
-            read_stream,
-            write_stream,
-            mcp_server.create_initialization_options()
+    logger.info("Starting MCP server...")
+    try:
+        async with stdio_server() as (read_stream, write_stream):
+            logger.info("MCP server stdio transport initialized")
+            init_options = InitializationOptions(
+                server_name="stock-data-mcp-server",
+                server_version="0.1.0",
+                capabilities=mcp_server.get_capabilities(
+                    notification_options=NotificationOptions(),
+                    experimental_capabilities={}
+                )
+            )
+            logger.info("Starting MCP server with initialization options")
+            await mcp_server.run(read_stream, write_stream, init_options)
+    except Exception as e:
+        logger.error(f"Error in MCP server: {e}")
+        # Don't raise the exception - we want the task to stay alive
+
+async def run_fastapi():
+    """Run FastAPI server using uvicorn."""
+    import uvicorn
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        log_level="info"
+    )
+    server = uvicorn.Server(config)
+    await server.serve()
+
+async def main():
+    """Run both servers when running as a script."""
+    if os.environ.get("RUN_HTTP", "").lower() == "true":
+        # Run both MCP and HTTP servers
+        await asyncio.gather(
+            run_mcp_server(),
+            run_fastapi()
         )
+    else:
+        # Run only MCP server
+        await run_mcp_server()
 
 if __name__ == "__main__":
-    import uvicorn
-    # Run both FastAPI and MCP server
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Create tasks for both servers
-    fastapi_task = loop.create_task(
-        uvicorn.run(
-            app,
-            host="127.0.0.1",  # Changed from 0.0.0.0 to localhost only
-            port=config.PORT,
-            log_level=config.LOG_LEVEL.lower()
-        )
-    )
-    mcp_task = loop.create_task(run_mcp_server())
-    
-    try:
-        # Run both servers concurrently
-        loop.run_until_complete(asyncio.gather(fastapi_task, mcp_task))
-    except KeyboardInterrupt:
-        logger.info("Shutting down servers...")
-    finally:
-        loop.close()
+    asyncio.run(main())
